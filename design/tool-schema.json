@@ -1,0 +1,105 @@
+{
+  "notes": "Each tool below maps 1:1 to a backend endpoint. 'elevenlabs_config' is what gets entered in the ElevenLabs dashboard when adding a custom tool (webhook type). 'backend_endpoint' is what Claude Code must implement to match exactly. Base URL during local dev will be an ngrok URL; document that in backend/README.md.",
+
+  "tools": [
+    {
+      "name": "check_known_incidents",
+      "description": "Check whether there is a currently known/active IT incident matching the employee's reported issue category. Call this before proposing any troubleshooting steps.",
+      "elevenlabs_config": {
+        "method": "POST",
+        "path": "/check-incident",
+        "parameters": [
+          {
+            "name": "issue_category",
+            "type": "string",
+            "description": "One of: vpn, mfa, wifi, password, software_install, other",
+            "required": true
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "description": "Brief free-text description of what the employee reported",
+            "required": true
+          }
+        ]
+      },
+      "backend_endpoint": {
+        "method": "POST",
+        "path": "/check-incident",
+        "request_body_example": {
+          "issue_category": "vpn",
+          "description": "VPN says authentication failed"
+        },
+        "response_example_known_issue": {
+          "known_issue": true,
+          "incident_id": "SYS-INC-0192",
+          "workaround": "Close the VPN client fully, generate a fresh code manually in the authenticator app, then reopen the VPN client and enter it manually.",
+          "affects": "MFA push delivery for VPN login"
+        },
+        "response_example_no_known_issue": {
+          "known_issue": false
+        }
+      }
+    },
+    {
+      "name": "create_incident",
+      "description": "Create a support incident/ticket. Only call this after the employee has explicitly confirmed they want a ticket created. On success this also triggers a Slack notification to the IT support channel as part of the same call.",
+      "elevenlabs_config": {
+        "method": "POST",
+        "path": "/create-incident",
+        "parameters": [
+          { "name": "employee_name", "type": "string", "required": true },
+          { "name": "issue_category", "type": "string", "description": "One of: vpn, mfa, wifi, password, software_install, other", "required": true },
+          { "name": "description", "type": "string", "required": true },
+          { "name": "severity", "type": "string", "description": "One of: P1, P2, P3 (P1 = highest)", "required": true },
+          { "name": "business_impact", "type": "string", "description": "Free text, e.g. 'blocking customer meeting in 30 minutes'", "required": false }
+        ]
+      },
+      "backend_endpoint": {
+        "method": "POST",
+        "path": "/create-incident",
+        "request_body_example": {
+          "employee_name": "Diwakar",
+          "issue_category": "vpn",
+          "description": "VPN authentication failing, workaround attempted but did not resolve",
+          "severity": "P2",
+          "business_impact": "Blocking a customer meeting in 30 minutes"
+        },
+        "response_example_success": {
+          "success": true,
+          "incident_id": "INC-4831",
+          "slack_notified": true
+        },
+        "response_example_failure": {
+          "success": false,
+          "error": "Failed to reach ticketing system",
+          "slack_notified": false
+        },
+        "behavior_notes": "If the Slack webhook call fails, still return success:false overall so the agent does not falsely confirm the action. Do not partially succeed silently."
+      }
+    },
+    {
+      "name": "notify_support",
+      "description": "Posts a formatted incident summary to the IT support Slack channel. In the golden path this is called internally by create_incident's handler, not directly by the agent as a separate step — included here as its own endpoint for clarity and in case it's useful to call independently.",
+      "elevenlabs_config": {
+        "note": "Not exposed as a separate agent-facing tool in the golden demo path. Backend should still implement it as an internal function/endpoint for modularity."
+      },
+      "backend_endpoint": {
+        "method": "POST",
+        "path": "/notify-support",
+        "request_body_example": {
+          "incident_id": "INC-4831",
+          "employee_name": "Diwakar",
+          "issue_category": "vpn",
+          "severity": "P2",
+          "business_impact": "Blocking a customer meeting in 30 minutes",
+          "description": "VPN authentication failing, workaround attempted but did not resolve"
+        },
+        "slack_message_format_example": "🚨 P2 IT Incident\nEmployee: Diwakar\nIssue: VPN authentication failure\nImpact: Customer meeting in 30 minutes\nWorkaround attempted: Yes (did not resolve)\nTicket: INC-4831",
+        "response_example": {
+          "posted": true
+        }
+      }
+    }
+  ]
+}
